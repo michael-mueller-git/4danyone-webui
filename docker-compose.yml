@@ -1,0 +1,43 @@
+services:
+  webui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: 4danyone-webui:latest
+    container_name: 4danyone-webui
+    ports:
+      - "7860:7860"
+    volumes:
+      - models:/app/models
+      - data:/app/data
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      AUTO_DOWNLOAD_MODELS: "false"
+      MAX_CONCURRENCY: "1"
+      DEFAULT_ATTENTION_BACKEND: auto
+      # WEBUI_USERNAME: ""
+      # WEBUI_PASSWORD: ""
+      # SMPLX_SOURCE: "/app/data/smplx/models_smplx_v1_1.zip"
+    # Shared IPC so torch distributed (NCCL mp.spawn between the 3 visible GPUs)
+    # and torch.from_file(shared=True) have a shared-memory arena.
+    ipc: host
+    shm_size: "1g"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      stack:
+        soft: 67108864
+        hard: 67108864
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  models:
+  data:
