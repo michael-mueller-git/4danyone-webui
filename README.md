@@ -57,6 +57,6 @@ python scripts/provision_smplx.py
 ## Prepare Video
 
 
-```sh
-ffmpeg -i input.mp4 -frames:v 121 -vf "pad=w='max(iw,ih*9/16)':h='max(ih,iw*16/9)':x='(ow-iw)/2':y='(oh-ih)/2':color=black" -c:v libx264 -pix_fmt yuv420p -c:a aac output.mp4
+```shf
+fmpeg -i input.mp4 -frames:v 121 -vf "fps=30,scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black" -c:v libx264 -pix_fmt yuv420p -c:a aac -r 30 output.mp4
 ```
