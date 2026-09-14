@@ -53,3 +53,10 @@ python scripts/provision_smplx.py
 - SMPL-X is separately licensed; the bundled mirror may disappear — keep the official zip (`smpl-x.is.tue.mpg.de`) as a fallback.
 - Outputs are per-job Dirs under `data/jobs/<id>/out`; completed runs are never overwritten and can be re-run to resume.
 - Run container with `ipc: host` (compose does this) for NCCL/torch shared memory across the 3 cards.
+
+## Prepare Video
+
+
+```sh
+ffmpeg -i input.mp4 -frames:v 121 -vf "pad=w='max(iw,ih*9/16)':h='max(ih,iw*16/9)':x='(ow-iw)/2':y='(oh-ih)/2':color=black" -c:v libx264 -pix_fmt yuv420p -c:a aac output.mp4
+```
