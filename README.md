@@ -36,7 +36,8 @@ First run:
    `docker compose exec webui python /app/scripts/download_model.py --model_dir /app/models --gvhmr_root /app/third_party/GVHMR` (~16–20 GB into the `models` volume).
 2. **Provision SMPL-X** — auto-installs from a public mirror (or `SMPLX_SOURCE` env / drop `models_smplx_v1_1.zip` into `data/smplx/`):
    `docker compose exec webui python /app/scripts/provision_smplx.py`.
-3. **GPU health** — check the *GPU health* accordion on the control page (expect capability `8.0`, 64 GB per card).
+3. **Download SMPLer-X** (only if `MOTION_BACKEND=smplerx`) — `docker compose exec webui python /app/scripts/download_smplerx.py` (~2.6 GB).
+4. **GPU health** — check the *GPU health* accordion on the control page (expect capability `8.0`, 64 GB per card).
 
 Then upload a video (≥121 frames, 1080p+, 9:16 ideal) on the control page and run it in the viewer.
 
@@ -44,7 +45,9 @@ Then upload a video (≥121 frames, 1080p+, 9:16 ideal) on the control page and 
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `AUTO_DOWNLOAD_MODELS` | `false` | download models + SMPL-X at container start |
+| `MOTION_BACKEND` | `smplerx` | pose model: `smplerx` (better per-frame accuracy, slower) or `gvhmr` (upstream default, faster) |
+| `SMPLERX_BATCH` | `16` | frames per SMPLer-X batch (VRAM vs speed) |
+| `AUTO_DOWNLOAD_MODELS` | `false` | download models + SMPL-X + SMPLer-X at container start |
 | `DEFAULT_ATTENTION_BACKEND` | `auto` | `auto` / `sageattention` / `sdpa` |
 | `CONTROL_PORT` / `OFFICIAL_PORT` | `7860` / `7861` | ports of the two WebUIs |
 | `PUBLIC_VIEWER_URL` | `http://127.0.0.1:7861` | browser URL of the official Space; set to `http://<host>:7861` on a remote host |
@@ -58,7 +61,34 @@ Manual CLI (pre-seed the model volume during image build/CI):
 ```bash
 python /app/scripts/download_model.py --model_dir /app/models --gvhmr_root /app/third_party/GVHMR
 python /app/scripts/provision_smplx.py
+python /app/scripts/download_smplerx.py   # SMPLer-X motion backend
 ```
+
+## Pose model (motion stage)
+
+The pose stage recovers SMPL-X body motion from the video and feeds the
+skeleton/diffusion stages. Two backends are bundled, selected by `MOTION_BACKEND`:
+
+| Backend | Model | Tradeoff |
+| --- | --- | --- |
+| `smplerx` (default) | **SMPLer-X-H32** (ViT-H, NeurIPS 2023) | better per-frame pose accuracy (occlusion, hands, extreme poses); slower — a pure-PyTorch port of the body regressor runs per frame |
+| `gvhmr` | **GVHMR** (upstream) | faster, upstream default |
+
+Switching cost: `MOTION_BACKEND=gvhmr` in `docker-compose.yml` (or any value
+other than `smplerx`). The SMPLer-X checkpoint (`smpler_x_h32_correct.pth.tar`,
+~2.6 GB from Hugging Face `caizhongang/SMPLer-X`) is downloaded on first use or
+with `AUTO_DOWNLOAD_MODELS=true`; run `python /app/scripts/download_smplerx.py`
+to pre-seed the `models` volume.
+
+Notes:
+- The swap is isolated to the motion stage; the skeleton/geometry stage still
+  uses the GVHMR checkout's body-model utilities (unchanged).
+- SMPLer-X predicts per-frame camera-frame SMPL-X; the launcher converts it to
+  the pipeline's gravity-aligned world frame (GVHMR convention), so cached
+  motion from one backend is not reused by the other — give swapped runs new
+  output directories.
+- `SMPLERX_BATCH` trades VRAM for speed on the 170HX (default 16 is fine on
+  64 GB).
 
 ## How the supervisor works
 

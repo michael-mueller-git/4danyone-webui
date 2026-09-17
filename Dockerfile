@@ -52,13 +52,22 @@ RUN pip install --no-cache-dir rich matplotlib scikit-image joblib trimesh chump
 COPY entrypoint.sh /app/entrypoint.sh
 COPY launcher.py /app/launcher.py
 COPY scripts/provision_smplx.py /app/scripts/provision_smplx.py
+COPY scripts/download_smplerx.py /app/scripts/download_smplerx.py
 RUN chmod +x /app/entrypoint.sh
+
+# SMPLer-X motion stage (optional body-pose backend). The patched worker
+# dispatches on MOTION_BACKEND; the vendored package is a pure-PyTorch port of
+# the SMPLer-X-H32 body regressor (no mmcv/mmdet/mmpose).
+COPY src/fdanyone/motion/worker.py /app/fdanyone/motion/worker.py
+COPY src/fdanyone_smplerx/ /app/fdanyone_smplerx/
+RUN python -c "import fdanyone_smplerx; print('smplerx package OK')"
 
 ENV PYTHONPATH=/app \
     MODEL_DIR=/app/models \
     DATA_DIR=/app/data \
     GVHMR_ROOT=/app/third_party/GVHMR \
-    GRADIO_TEMP_DIR=/app/data/.gradio-tmp
+    GRADIO_TEMP_DIR=/app/data/.gradio-tmp \
+    MOTION_BACKEND=smplerx
 
 EXPOSE 7860 7861
 

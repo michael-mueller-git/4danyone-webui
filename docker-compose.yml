@@ -15,6 +15,7 @@ services:
       NVIDIA_VISIBLE_DEVICES: all
       AUTO_DOWNLOAD_MODELS: "false"
       DEFAULT_ATTENTION_BACKEND: auto
+      MOTION_BACKEND: smplerx # gvhmr | smplerx; SMPLer-X = better per-frame accuracy, slower
       # PUBLIC_VIEWER_URL: "http://<host>:7861"
       # VIDEO_PATH: "/app/data/source/pexels/2785536-uhd_2160_3840_25fps.mp4"
       # OUTPUT_DIR: "/app/data/fdanyone/my-run"
