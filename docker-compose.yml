@@ -6,17 +6,18 @@ services:
     image: 4danyone-webui:latest
     container_name: 4danyone-webui
     ports:
-      - "7860:7860"
+      - "7860:7860" # control / upload page
+      - "7861:7861" # official 4DAnyone Space (viewer)
     volumes:
       - models:/app/models
       - data:/app/data
     environment:
       NVIDIA_VISIBLE_DEVICES: all
       AUTO_DOWNLOAD_MODELS: "false"
-      MAX_CONCURRENCY: "1"
       DEFAULT_ATTENTION_BACKEND: auto
-      # WEBUI_USERNAME: ""
-      # WEBUI_PASSWORD: ""
+      # PUBLIC_VIEWER_URL: "http://<host>:7861"
+      # VIDEO_PATH: "/app/data/source/pexels/2785536-uhd_2160_3840_25fps.mp4"
+      # OUTPUT_DIR: "/app/data/fdanyone/my-run"
       # SMPLX_SOURCE: "/app/data/smplx/models_smplx_v1_1.zip"
     # Shared IPC so torch distributed (NCCL mp.spawn between the 3 visible GPUs)
     # and torch.from_file(shared=True) have a shared-memory arena.

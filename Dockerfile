@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# 4DAnyone Gradio WebUI
+# 4DAnyone WebUI — official Gradio Space + upload supervisor.
 #
 # Base: PyTorch 2.8 / CUDA 12.8 with cuDNN. sm_80 (GA100) is included, so the
 # unlocked CMP 170HX (compute capability 8.0, 64 GB) works out of the box.
@@ -34,26 +34,32 @@ RUN git clone --depth 1 --branch ${FDANYONE_REV} ${FDANYONE_REPO} /app \
 # Core 4DAnyone requirements (torch is inherited from the base image).
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-# WebUI dependencies. SageAttention 1.0.6 is the pure-Python (Triton) wheel:
-# no CUDA compile, and it runs the only code path available on sm_80.
-COPY requirements-webui.txt /tmp/requirements-webui.txt
-RUN pip install --no-cache-dir -r /tmp/requirements-webui.txt \
-    && python -c "import gradio, sageattention; print('webui deps OK')"
+# Official GUI dependencies (gradio 6.20.0, gradio-rerun, rerun-sdk).
+RUN pip install --no-cache-dir -r /app/requirements-gui.txt \
+    && python -c "import gradio, gradio_rerun, rerun_sdk; print('gui deps OK')"
+
+# SageAttention 1.0.6 is the pure-Python (Triton) wheel: no CUDA compile, and it
+# runs the only code path available on sm_80. With it installed (and
+# FlashAttention-3 absent, which is Hopper-only), the pipeline's `auto` backend
+# resolves to SageAttention on the 170HX.
+RUN pip install --no-cache-dir sageattention==1.0.6 \
+    && python -c "import sageattention; print('sageattention OK')"
 
 # Best-effort extras for the GVHMR submodule runtime imports.
 RUN pip install --no-cache-dir rich matplotlib scikit-image joblib trimesh chumpy hydra_colorlog || true
 
-# WebUI application files.
+# WebUI launcher + headless SMPL-X provisioning.
 COPY entrypoint.sh /app/entrypoint.sh
-COPY app/ /app/app/
-COPY scripts/ /app/scripts/
+COPY launcher.py /app/launcher.py
+COPY scripts/provision_smplx.py /app/scripts/provision_smplx.py
 RUN chmod +x /app/entrypoint.sh
 
 ENV PYTHONPATH=/app \
     MODEL_DIR=/app/models \
     DATA_DIR=/app/data \
-    GVHMR_ROOT=/app/third_party/GVHMR
+    GVHMR_ROOT=/app/third_party/GVHMR \
+    GRADIO_TEMP_DIR=/app/data/.gradio-tmp
 
-EXPOSE 7860
+EXPOSE 7860 7861
 
 ENTRYPOINT ["/app/entrypoint.sh"]
