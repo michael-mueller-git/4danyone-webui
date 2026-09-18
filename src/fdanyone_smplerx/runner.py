@@ -18,7 +18,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from fdanyone.motion.gvhmr import _install_optional_import_stubs, gvhmr_imports
+from fdanyone.motion.gvhmr import _install_optional_import_stubs, gvhmr_imports, validate_gvhmr
 from fdanyone.motion.result import MotionResult
 from fdanyone.vendor.pytorch3d_compat import install_if_needed as install_pytorch3d_compat
 from fdanyone_smplerx.config import (
@@ -178,6 +178,8 @@ def run_smplerx(
         gvhmr_root,
         output_root,
     )
+    _, gvhmr_revision = validate_gvhmr(gvhmr_root)
+    LOGGER.info("SMPLer-X: pose source %s, GVHMR revision %s.", SMPLERX_REVISION, gvhmr_revision)
     checkpoint = resolve_checkpoint()
     LOGGER.info("SMPLer-X: resolved checkpoint %s.", checkpoint)
     bbx_xyxy, kp2d = _person_bbox_and_keypoints(gvhmr_root, str(working_video))
@@ -239,7 +241,7 @@ def run_smplerx(
     )
 
     result = MotionResult(
-        gvhmr_revision=SMPLERX_REVISION,
+        gvhmr_revision=gvhmr_revision,
         fps=clip.fps,
         frame_timestamps_sec=tuple(float(frame.canonical_timestamp) for frame in clip.frames),
         source_frame_indices=tuple(frame.source_index for frame in clip.frames),
@@ -255,8 +257,9 @@ def run_smplerx(
             "transl": transl_world.cpu(),
         },
         smpl_params_incam={
-            "body_pose": body_pose,
-            "betas": betas,
+            # safetensors rejects tensors that alias smpl_params_global storage.
+            "body_pose": body_pose.clone(),
+            "betas": betas.clone(),
             "global_orient": root_pose,
             "transl": cam_trans,
         },
