@@ -133,8 +133,23 @@ def _gravity_align(
 
     model_path = Path(gvhmr_root) / "inputs/checkpoints/body_models"
     body = smplx.create(str(model_path), "smplx", gender="neutral", use_pca=False, flat_hand_mean=True).to(device).eval()
+    frames = root_pose.shape[0]
+    # smplx keeps its default jaw/eye/hand/expression parameters at batch 1;
+    # expand them to the clip length so forward()'s torch.cat aligns.
+    defaults = {
+        name: getattr(body, name).detach().expand(frames, *getattr(body, name).shape[1:])
+        for name in ("jaw_pose", "leye_pose", "reye_pose", "left_hand_pose", "right_hand_pose", "expression")
+    }
+    LOGGER.info(
+        "SMPLer-X: gravity-align shapes global_orient=%s body_pose=%s betas=%s transl=%s expression=%s.",
+        tuple(root_pose.shape),
+        tuple(body_pose.shape),
+        tuple(betas.shape),
+        tuple(cam_trans.shape),
+        tuple(defaults["expression"].shape),
+    )
     with torch.inference_mode():
-        out = body(global_orient=root_pose, body_pose=body_pose, betas=betas, transl=cam_trans)
+        out = body(global_orient=root_pose, body_pose=body_pose, betas=betas, transl=cam_trans, **defaults)
         joints = out.joints  # (N, 55, 3)
     up = (joints[:, _NECK] - joints[:, _PELVIS]).mean(0)
     rotation = _rotation_to_y(up)  # (3,3), camera -> world
