@@ -185,7 +185,7 @@ class Supervisor:
         )
         return [str(p) for p in dirs]
 
-    def log_tail(self, path: str | None, chars: int = 4000) -> str:
+    def log_tail(self, path: str | None, chars: int = 8000) -> str:
         if not path or not Path(path).is_file():
             return ""
         data = Path(path).read_text(errors="replace")

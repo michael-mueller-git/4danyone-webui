@@ -11,14 +11,16 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from pathlib import Path
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 
-from fdanyone.motion.gvhmr import gvhmr_imports
+from fdanyone.motion.gvhmr import _install_optional_import_stubs, gvhmr_imports
 from fdanyone.motion.result import MotionResult
+from fdanyone.vendor.pytorch3d_compat import install_if_needed as install_pytorch3d_compat
 from fdanyone_smplerx.config import (
     FOCAL,
     INPUT_BODY_SHAPE,
@@ -42,8 +44,23 @@ def _full_frame_bbox(width: int, height: int) -> tuple[float, float, float, floa
     return 0.0, 0.0, float(width), float(height)
 
 
+def _bootstrap_gvhmr_imports() -> None:
+    """Install the optional-dependency shims GVHMR inference needs.
+
+    ``run_gvhmr`` performs this in ``_register_inference_store``; the SMPLer-X
+    path imports the same ``hmr4d`` modules, so it must activate the bundled
+    ``pytorch3d`` compatibility subset and stub the moving-camera ``pycolmap``
+    dependency before any ``hmr4d`` import runs.
+    """
+
+    registered = install_pytorch3d_compat()
+    _install_optional_import_stubs()
+    LOGGER.info("SMPLer-X: GVHMR import shims ready (pytorch3d compat installed=%s).", registered)
+
+
 def _person_bbox_and_keypoints(gvhmr_root, video_path: str) -> tuple[torch.Tensor, torch.Tensor]:
     """YOLO person track (xyxy) + ViTPose 2D keypoints via the GVHMR checkout."""
+    _bootstrap_gvhmr_imports()
     with gvhmr_imports(gvhmr_root):
         from hmr4d.utils.geo.hmr_cam import get_bbx_xys_from_xyxy
         from hmr4d.utils.preproc.tracker import Tracker
@@ -51,15 +68,26 @@ def _person_bbox_and_keypoints(gvhmr_root, video_path: str) -> tuple[torch.Tenso
         from hmr4d.utils.video_io_utils import get_video_lwh
 
         frame_count, width, height = get_video_lwh(video_path)
+        LOGGER.info("SMPLer-X: detecting the person in %d frames (%dx%d).", frame_count, width, height)
         tracker = Tracker()
         try:
             bbx_xyxy = tracker.get_one_track(video_path).float()
         except IndexError:
             LOGGER.warning("SMPLer-X tracker found no person; using a full-frame bbox.")
             bbx_xyxy = torch.tensor(_full_frame_bbox(width, height), dtype=torch.float32).repeat(frame_count, 1)
+        LOGGER.info(
+            "SMPLer-X: tracker produced %d boxes (x %.1f..%.1f, y %.1f..%.1f).",
+            bbx_xyxy.shape[0],
+            float(bbx_xyxy[:, 0].min()),
+            float(bbx_xyxy[:, 2].max()),
+            float(bbx_xyxy[:, 1].min()),
+            float(bbx_xyxy[:, 3].max()),
+        )
         bbx_xys = get_bbx_xys_from_xyxy(bbx_xyxy, base_enlarge=1.2).float()
         extractor = VitPoseExtractor()
+        LOGGER.info("SMPLer-X: running ViTPose on %d boxes.", bbx_xys.shape[0])
         kp2d = extractor.extract(video_path, bbx_xys)
+        LOGGER.info("SMPLer-X: ViTPose keypoints shape %s.", tuple(kp2d.shape))
     return bbx_xyxy.detach().cpu(), kp2d.detach().cpu().float()
 
 
@@ -124,11 +152,21 @@ def run_smplerx(
     device: str,
 ) -> MotionResult:
     """Recover static-camera human motion with the SMPLer-X body regressor."""
+    started = time.monotonic()
     output_root = Path(output_dir).expanduser().resolve()
     output_root.mkdir(parents=True, exist_ok=True)
 
+    LOGGER.info(
+        "SMPLer-X: start (device=%s, video=%s, gvhmr_root=%s, output_dir=%s).",
+        device,
+        working_video,
+        gvhmr_root,
+        output_root,
+    )
     checkpoint = resolve_checkpoint()
+    LOGGER.info("SMPLer-X: resolved checkpoint %s.", checkpoint)
     bbx_xyxy, kp2d = _person_bbox_and_keypoints(gvhmr_root, str(working_video))
+    LOGGER.info("SMPLer-X: detection + keypoints done in %.1fs.", time.monotonic() - started)
 
     frames = [np.asarray(frame) for frame in clip.rgb_frames]
     num_frames = len(frames)
@@ -142,14 +180,17 @@ def run_smplerx(
         )
         bbx_xyxy = bbx_xyxy[:1].repeat(num_frames, 1)
 
-    LOGGER.info("SMPLer-X: loading %s", checkpoint)
+    LOGGER.info("SMPLer-X: loading model on %s from %s.", device, checkpoint)
     model = build_model(device)
     load_checkpoint(model, checkpoint, device)
+    LOGGER.info("SMPLer-X: model ready; regressing %d frames (batch=%d).", num_frames, _BATCH)
 
     all_root, all_body, all_shape, all_cam, all_K = [], [], [], [], []
     with torch.inference_mode():
         for start in range(0, num_frames, _BATCH):
-            indices = range(start, min(start + _BATCH, num_frames))
+            end = min(start + _BATCH, num_frames)
+            LOGGER.info("SMPLer-X: frames %d..%d.", start, end - 1)
+            indices = range(start, end)
             patches: list[np.ndarray] = []
             bboxes: list[np.ndarray] = []
             for index in indices:
@@ -177,6 +218,7 @@ def run_smplerx(
     cam_trans = torch.cat(all_cam)
     K_fullimg = torch.stack(all_K)
 
+    LOGGER.info("SMPLer-X: aligning %d frames to gravity.", num_frames)
     root_world, transl_world, _ = _gravity_align(
         root_pose.to(device), body_pose.to(device), betas.to(device), cam_trans.to(device), device, gvhmr_root
     )
@@ -207,4 +249,5 @@ def run_smplerx(
         observed_keypoints_2d=kp2d,
     )
     result.validate(expected_frames=num_frames)
+    LOGGER.info("SMPLer-X: motion ready for %d frames in %.1fs.", num_frames, time.monotonic() - started)
     return result
