@@ -43,11 +43,22 @@ OFFICIAL_PORT = int(os.environ.get("OFFICIAL_PORT", "7861"))
 PUBLIC_VIEWER_URL = os.environ.get("PUBLIC_VIEWER_URL") or f"http://127.0.0.1:{OFFICIAL_PORT}"
 ATTENTION_BACKEND = os.environ.get("DEFAULT_ATTENTION_BACKEND", "auto")
 
+DEFAULT_MOTION_BACKEND = os.environ.get("MOTION_BACKEND", "gvhmr").strip().lower()
+CLEAR_ON_START = os.environ.get("CLEAR_ON_START", "true").strip().lower() not in {"0", "false", "no", "off"}
+POSE_MODELS = (
+    ("GVHMR — stable depth/trajectory", "gvhmr"),
+    ("SMPLer-X — sharper per-frame pose", "smplerx"),
+)
+
 UPLOADS_DIR = DATA_DIR / "uploads"
 OUTPUTS_DIR = DATA_DIR / "fdanyone"
 CACHE_DIR = DATA_DIR / "space-cache"
 LOGS_DIR = DATA_DIR / "logs"
 EXAMPLES_DIR = DATA_DIR / "source" / "pexels"
+
+# Disposable artifacts wiped before a fresh video task. Never touches the
+# bundled examples (EXAMPLES_DIR), the licensed SMPL-X source, or MODEL_DIR.
+CLEAN_DIRS = (UPLOADS_DIR, OUTPUTS_DIR, CACHE_DIR, LOGS_DIR)
 
 MIN_FRAMES = 121
 READY_TIMEOUT = 240
@@ -153,21 +164,46 @@ class Supervisor:
             self.proc.wait()
         self.proc = None
 
-    def start_official(self, *, video: str | None, output: str) -> None:
+    def start_official(self, *, video: str | None, output: str, backend: str) -> None:
         self.stop_official()
+        LOGS_DIR.mkdir(parents=True, exist_ok=True)
         log_path = LOGS_DIR / f"official-{_now()}.log"
         command = self._official_command(video=video, output=output)
+        environment = os.environ.copy()
+        environment["MOTION_BACKEND"] = backend
         with log_path.open("wb") as log:
             self.proc = subprocess.Popen(
                 command,
                 cwd=str(REPO_ROOT),
-                env=os.environ.copy(),
+                env=environment,
                 stdin=subprocess.DEVNULL,
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
-        self.current = {"video": video or "", "output": output, "log": str(log_path)}
+        self.current = {"video": video or "", "output": output, "log": str(log_path), "backend": backend}
+
+    def clear_runs(self) -> None:
+        """Delete disposable run artifacts before a fresh video task.
+
+        Stops the viewer first so nothing is deleted while in use, then wipes
+        uploads, published/scratch outputs, cache, and old logs. Bundled
+        examples, the model cache, and the licensed SMPL-X source are untouched.
+        """
+
+        self.stop_official()
+        for directory in CLEAN_DIRS:
+            try:
+                if directory.is_dir():
+                    for child in directory.iterdir():
+                        if child.is_dir() and not child.is_symlink():
+                            shutil.rmtree(child, ignore_errors=True)
+                        else:
+                            child.unlink(missing_ok=True)
+                directory.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                print(f"[launcher] could not clear {directory}: {exc}", flush=True)
+        self.current = None
 
     # -- discovery helpers ------------------------------------------------
     def list_examples(self) -> list[str]:
@@ -213,7 +249,10 @@ def _stage_upload(source: str) -> str:
     return str(target)
 
 
-def start_run(video_file, example):
+def start_run(video_file, example, backend, clear_old):
+    if clear_old:
+        yield gr.update(value="Clearing previous runs…"), gr.update(visible=False)
+        supervisor.clear_runs()
     yield gr.update(value="Saving video…"), gr.update(visible=False)
     try:
         source = _stage_upload(_resolve_source(video_file, example))
@@ -229,11 +268,11 @@ def start_run(video_file, example):
         return
     output = str(OUTPUTS_DIR / f"{Path(source).stem}-{_now()}")
     yield (
-        gr.update(value=f"Starting the 4DAnyone viewer (video: {Path(source).name}). "
+        gr.update(value=f"Starting the 4DAnyone viewer (video: {Path(source).name}, pose model: {backend}). "
                         "The first start can take a minute…"),
         gr.update(visible=False),
     )
-    supervisor.start_official(video=source, output=output)
+    supervisor.start_official(video=source, output=output, backend=backend)
     if not _wait_ready(supervisor.proc, READY_TIMEOUT):
         log = supervisor.log_tail(supervisor.current["log"])
         yield (
@@ -247,12 +286,12 @@ def start_run(video_file, example):
     )
 
 
-def reopen_run(run_dir):
+def reopen_run(run_dir, backend):
     yield gr.update(value="Opening the saved run…"), gr.update(visible=False)
     if not run_dir or not Path(run_dir).is_dir():
         yield gr.update(value="Select a run to reopen."), gr.update(visible=False)
         return
-    supervisor.start_official(video=None, output=str(Path(run_dir).resolve()))
+    supervisor.start_official(video=None, output=str(Path(run_dir).resolve()), backend=backend)
     if not _wait_ready(supervisor.proc, READY_TIMEOUT):
         log = supervisor.log_tail(supervisor.current["log"])
         yield (
@@ -276,6 +315,7 @@ def refresh_current():
     if supervisor.current:
         info = (
             f"video:  {supervisor.current['video'] or '(saved task)'}\n"
+            f"model:  {supervisor.current.get('backend', DEFAULT_MOTION_BACKEND)}\n"
             f"output: {supervisor.current['output']}\n"
             f"log:    {supervisor.current['log']}"
         )
@@ -313,6 +353,11 @@ def assets_status():
     return "\n".join(lines)
 
 
+def _default_pose_model() -> str:
+    values = {value for _, value in POSE_MODELS}
+    return DEFAULT_MOTION_BACKEND if DEFAULT_MOTION_BACKEND in values else POSE_MODELS[0][1]
+
+
 # -- app assembly ---------------------------------------------------------
 def build() -> gr.Blocks:
     examples = supervisor.list_examples()
@@ -332,6 +377,15 @@ def build() -> gr.Blocks:
                     choices=[{"value": path, "label": Path(path).name} for path in examples],
                     label="…or a bundled example",
                     value=None,
+                )
+                pose_model = gr.Dropdown(
+                    choices=list(POSE_MODELS),
+                    value=_default_pose_model(),
+                    label="Pose model",
+                )
+                clear_old = gr.Checkbox(
+                    label="Delete previous runs before starting",
+                    value=CLEAR_ON_START,
                 )
                 start_btn = gr.Button("Start with this video", variant="primary")
                 status = gr.Textbox(label="Status", lines=3, interactive=False)
@@ -353,8 +407,8 @@ def build() -> gr.Blocks:
                     assets_btn = gr.Button("Refresh asset status")
                     assets_text = gr.Textbox(label="Assets", lines=8, interactive=False)
 
-        start_btn.click(start_run, [video_file, example], [status, redirect])
-        reopen_btn.click(reopen_run, [run_dropdown], [status, redirect])
+        start_btn.click(start_run, [video_file, example, pose_model, clear_old], [status, redirect])
+        reopen_btn.click(reopen_run, [run_dropdown, pose_model], [status, redirect])
         stop_btn.click(stop_viewer, outputs=[status])
         refresh_btn.click(refresh_current, outputs=[current_info, log_box, run_dropdown])
         gpu_btn.click(gpu_status, outputs=[gpu_text])
@@ -384,9 +438,12 @@ def _preseed() -> None:
         output = str(Path(output).expanduser().resolve())
     else:
         output = str(OUTPUTS_DIR / f"{path.stem}-{_now()}")
+    if CLEAR_ON_START:
+        print("[launcher] clearing previous runs before pre-starting the official Space", flush=True)
+        supervisor.clear_runs()
     print(f"[launcher] VIDEO_PATH set: starting official Space for {path.name}", flush=True)
     try:
-        supervisor.start_official(video=str(path), output=output)
+        supervisor.start_official(video=str(path), output=output, backend=DEFAULT_MOTION_BACKEND)
     except Exception as exc:  # noqa: BLE001 - surface, do not crash the control page
         print(f"[launcher] failed to pre-start official Space: {exc}", flush=True)
 

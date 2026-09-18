@@ -39,13 +39,17 @@ First run:
 3. **Download SMPLer-X** (only if `MOTION_BACKEND=smplerx`) — `docker compose exec webui python /app/scripts/download_smplerx.py` (~2.6 GB).
 4. **GPU health** — check the *GPU health* accordion on the control page (expect capability `8.0`, 64 GB per card).
 
-Then upload a video (≥121 frames, 1080p+, 9:16 ideal) on the control page and run it in the viewer.
+Then upload a video (≥121 frames, 1080p+, 9:16 ideal) on the control page, pick a **pose model**
+(`gvhmr` or `smplerx`), and run it in the viewer. By default each new upload deletes all previous
+runs/uploads/cache/logs first (uncheck *Delete previous runs before starting*, or set
+`CLEAR_ON_START=false`, to keep them for the *Previous runs* / reopen flow).
 
 ## Configuration (env)
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `MOTION_BACKEND` | `smplerx` | pose model: `smplerx` (better per-frame accuracy, slower) or `gvhmr` (upstream default, faster) |
+| `MOTION_BACKEND` | `gvhmr` | default pose model for the control-page dropdown: `gvhmr` (stable depth/trajectory) or `smplerx` (sharper per-frame pose, jittery depth) |
+| `CLEAR_ON_START` | `true` | delete previous runs/uploads/cache/logs before each new video (control-page checkbox overrides per run) |
 | `SMPLERX_BATCH` | `16` | frames per SMPLer-X batch (VRAM vs speed) |
 | `AUTO_DOWNLOAD_MODELS` | `false` | download models + SMPL-X + SMPLer-X at container start |
 | `DEFAULT_ATTENTION_BACKEND` | `auto` | `auto` / `sageattention` / `sdpa` |
@@ -67,18 +71,24 @@ python /app/scripts/download_smplerx.py   # SMPLer-X motion backend
 ## Pose model (motion stage)
 
 The pose stage recovers SMPL-X body motion from the video and feeds the
-skeleton/diffusion stages. Two backends are bundled, selected by `MOTION_BACKEND`:
+skeleton/diffusion stages. Two backends are bundled and selectable **per run**
+from the control-page *Pose model* dropdown (`MOTION_BACKEND` only sets the
+default):
 
 | Backend | Model | Tradeoff |
 | --- | --- | --- |
-| `smplerx` (default) | **SMPLer-X-H32** (ViT-H, NeurIPS 2023) | better per-frame pose accuracy (occlusion, hands, extreme poses); slower — a pure-PyTorch port of the body regressor runs per frame |
-| `gvhmr` | **GVHMR** (upstream) | faster, upstream default |
+| `gvhmr` (default) | **GVHMR** (upstream, video/temporal) | stable depth and global trajectory, no jitter; per-frame pose can be softer |
+| `smplerx` | **SMPLer-X-H32** (ViT-H, NeurIPS 2023, per-frame) | sharper per-frame pose; jitter and unstable depth because frames are regressed independently |
 
-Switching cost: `MOTION_BACKEND=gvhmr` in `docker-compose.yml` (or any value
-other than `smplerx`). The SMPLer-X checkpoint (`smpler_x_h32_correct.pth.tar`,
-~2.6 GB from Hugging Face `caizhongang/SMPLer-X`) is downloaded on first use or
-with `AUTO_DOWNLOAD_MODELS=true`; run `python /app/scripts/download_smplerx.py`
-to pre-seed the `models` volume.
+The SMPLer-X checkpoint (`smpler_x_h32_correct.pth.tar`, ~2.6 GB from Hugging
+Face `caizhongang/SMPLer-X`) is downloaded on first use or with
+`AUTO_DOWNLOAD_MODELS=true`; run `python /app/scripts/download_smplerx.py` to
+pre-seed the `models` volume. GVHMR assets are part of the standard model
+download.
+
+Because the two backends produce different motion for the same clip, give a
+swapped run a fresh output directory (the control page already does this per
+upload).
 
 Notes:
 - The swap is isolated to the motion stage; the skeleton/geometry stage still
@@ -96,8 +106,11 @@ Notes:
 lifecycle of the official Space subprocess:
 
 1. Upload a video → validated (≥121 frames via PyAV), saved to `data/uploads/`.
-2. The previous official process (if any) is stopped (`SIGTERM`, upstream's clean handler).
-3. A fresh `python app.py --video_path <video> --output_dir <fresh> ... --server_port 7861` starts.
+2. With *Delete previous runs before starting* checked (`CLEAR_ON_START`), the previous official
+   process is stopped (`SIGTERM`) and `data/uploads/`, `data/fdanyone/`, `data/space-cache/`,
+   `data/logs/` are wiped. Bundled examples, the model cache, and the SMPL-X source are kept.
+3. A fresh `python app.py --video_path <video> --output_dir <fresh> ... --server_port 7861` starts
+   with the dropdown's `MOTION_BACKEND`.
 4. Once port 7861 accepts connections, your browser is redirected there.
 5. Finished runs stay under `data/fdanyone/<clip>-<timestamp>/` on the volume; reopen any of them from the *Previous runs* accordion.
 

@@ -70,7 +70,7 @@ ENV PYTHONPATH=/app \
     DATA_DIR=/app/data \
     GVHMR_ROOT=/app/third_party/GVHMR \
     GRADIO_TEMP_DIR=/app/data/.gradio-tmp \
-    MOTION_BACKEND=smplerx
+    MOTION_BACKEND=gvhmr
 
 EXPOSE 7860 7861
 
