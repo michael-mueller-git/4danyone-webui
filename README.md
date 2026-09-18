@@ -17,9 +17,9 @@ fresh one for the new clip — no container restart needed. One run at a time
 
 ## Target platform
 
-- **GPU**: unlocked NVIDIA CMP 170HX — GA100 die, **compute capability 8.0 (sm_80)**, 64 GB HBM2e (3 cards recommended).
+- **GPU**: unlocked NVIDIA CMP 170HX — GA100 die, **compute capability 8.0 (sm_80)**, 64 GB HBM2e (multi-GPU recommended).
 - Base image is PyTorch 2.8 / CUDA 12.8 (sm_80 included); FlashAttention-3 is Hopper-only, so **SageAttention 1.0.6** (pure-Python Triton wheel, no compile) is preinstalled. The pipeline's `auto` attention backend therefore resolves to SageAttention (`flash_attn_3 → sageattention → sdpa` by availability).
-- ~22–24 GB peak VRAM per run, so a single 64 GB card suffices; 3 cards split view-groups for speed.
+- ~22–24 GB peak VRAM per run, so a single 64 GB card suffices; multiple GPUs split view-groups for speed.
 
 ## Quick start
 
@@ -104,7 +104,7 @@ lifecycle of the official Space subprocess:
 ## Notes
 
 - SMPL-X is separately licensed; the bundled mirror may disappear — keep the official zip (`smpl-x.is.tue.mpg.de`) as a fallback via `SMPLX_SOURCE`.
-- Run the container with `ipc: host` (compose does this) for NCCL/torch shared memory across the 3 cards.
+- Run the container with `ipc: host` (compose does this) for NCCL/torch shared memory across the GPUs.
 - The official Space is upstream's `app.py`, used unmodified.
 
 ## Kubernetes
