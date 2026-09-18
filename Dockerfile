@@ -26,9 +26,12 @@ WORKDIR /app
 
 # Vendor 4DAnyone + its GVHMR submodule.
 ARG FDANYONE_REPO=https://github.com/ant-research/4DAnyone.git
-ARG FDANYONE_REV=main
+ARG FDANYONE_REV=61e0ccd5c85c01c612b4c4aecb3de148e6f5bae5
 ARG GVHMR_DEPTH=1
-RUN git clone --depth 1 --branch ${FDANYONE_REV} ${FDANYONE_REPO} /app \
+RUN git init /app \
+    && git -C /app remote add origin ${FDANYONE_REPO} \
+    && git -C /app fetch --depth 1 origin ${FDANYONE_REV} \
+    && git -C /app checkout --detach FETCH_HEAD \
     && git -C /app submodule update --init --depth ${GVHMR_DEPTH} third_party/GVHMR
 
 # Core 4DAnyone requirements (torch is inherited from the base image).
