@@ -65,10 +65,26 @@ COPY src/fdanyone/motion/worker.py /app/fdanyone/motion/worker.py
 COPY src/fdanyone_smplerx/ /app/fdanyone_smplerx/
 RUN python -c "import fdanyone_smplerx; print('smplerx package OK')"
 
+# PromptHMR-Vid motion stage. Only the single-person static-camera path is used,
+# so none of PromptHMR's compiled world-video extras (detectron2 / SAM2 /
+# DROID-SLAM / Metric3D / pytorch3d) are installed. Its SAM-style transformer
+# blocks import xformers, which is shimmed with SDPA at runtime.
+ARG PROMPTHMR_REPO=https://github.com/yufu-wang/PromptHMR.git
+ARG PROMPTHMR_REV=3b566b7dbb28ce506c7ea972c18693f4c705ce8c
+RUN pip install --no-cache-dir "timm==0.9.12" "open_clip_torch==2.24.0" supervision filterpy gdown \
+    && git clone ${PROMPTHMR_REPO} /opt/prompthmr \
+    && git -C /opt/prompthmr fetch --depth 1 origin ${PROMPTHMR_REV} \
+    && git -C /opt/prompthmr checkout --detach FETCH_HEAD \
+    && : > /opt/prompthmr/pipeline/__init__.py
+COPY src/fdanyone_prompthmr/ /app/fdanyone_prompthmr/
+COPY scripts/download_prompthmr.py /app/scripts/download_prompthmr.py
+RUN python -c "import fdanyone_prompthmr; print('prompthmr package OK')"
+
 ENV PYTHONPATH=/app \
     MODEL_DIR=/app/models \
     DATA_DIR=/app/data \
     GVHMR_ROOT=/app/third_party/GVHMR \
+    PROMPTHMR_ROOT=/opt/prompthmr \
     GRADIO_TEMP_DIR=/app/data/.gradio-tmp \
     MOTION_BACKEND=gvhmr
 

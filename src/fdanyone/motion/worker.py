@@ -68,6 +68,10 @@ def main(request_path: str) -> None:
             from fdanyone_smplerx.runner import run_smplerx
 
             result = run_smplerx(gvhmr_root=request["gvhmr_root"], **common)
+        elif backend == "prompthmr":
+            from fdanyone_prompthmr.runner import run_prompthmr
+
+            result = run_prompthmr(gvhmr_root=request["gvhmr_root"], **common)
         else:
             from fdanyone.motion.gvhmr import run_gvhmr
 

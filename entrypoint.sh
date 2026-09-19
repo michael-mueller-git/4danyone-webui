@@ -27,6 +27,8 @@ if [[ "${AUTO_DOWNLOAD_MODELS:-false}" == "true" ]]; then
       || echo "[4danyone-webui] SMPL-X provisioning reported an error"
   python /app/scripts/download_smplerx.py \
       || echo "[4danyone-webui] SMPLer-X download reported an error"
+  python /app/scripts/download_prompthmr.py \
+      || echo "[4danyone-webui] PromptHMR download reported an error"
 fi
 
 exec python /app/launcher.py

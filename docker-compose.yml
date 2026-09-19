@@ -15,7 +15,7 @@ services:
       NVIDIA_VISIBLE_DEVICES: all
       AUTO_DOWNLOAD_MODELS: "false"
       DEFAULT_ATTENTION_BACKEND: auto
-      MOTION_BACKEND: gvhmr # default for the control-page dropdown: gvhmr | smplerx
+      MOTION_BACKEND: gvhmr # default for the control-page dropdown: gvhmr | prompthmr | smplerx
       CLEAR_ON_START: "true" # delete previous runs/uploads/cache/logs before each new video
       # PUBLIC_VIEWER_URL: "http://<host>:7861"
       # VIDEO_PATH: "/app/data/source/pexels/2785536-uhd_2160_3840_25fps.mp4"

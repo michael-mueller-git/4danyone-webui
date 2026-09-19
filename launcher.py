@@ -47,6 +47,7 @@ DEFAULT_MOTION_BACKEND = os.environ.get("MOTION_BACKEND", "gvhmr").strip().lower
 CLEAR_ON_START = os.environ.get("CLEAR_ON_START", "true").strip().lower() not in {"0", "false", "no", "off"}
 POSE_MODELS = (
     ("GVHMR — stable depth/trajectory", "gvhmr"),
+    ("PromptHMR-Vid — SOTA pose + world", "prompthmr"),
     ("SMPLer-X — sharper per-frame pose", "smplerx"),
 )
 

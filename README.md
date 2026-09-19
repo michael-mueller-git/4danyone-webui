@@ -36,8 +36,9 @@ First run:
    `docker compose exec webui python /app/scripts/download_model.py --model_dir /app/models --gvhmr_root /app/third_party/GVHMR` (~16–20 GB into the `models` volume).
 2. **Provision SMPL-X** — auto-installs from a public mirror (or `SMPLX_SOURCE` env / drop `models_smplx_v1_1.zip` into `data/smplx/`):
    `docker compose exec webui python /app/scripts/provision_smplx.py`.
-3. **Download SMPLer-X** (only if `MOTION_BACKEND=smplerx`) — `docker compose exec webui python /app/scripts/download_smplerx.py` (~2.6 GB).
-4. **GPU health** — check the *GPU health* accordion on the control page (expect capability `8.0`, 64 GB per card).
+3. **Download SMPLer-X** (only if you select `smplerx`) — `docker compose exec webui python /app/scripts/download_smplerx.py` (~2.6 GB).
+4. **Download PromptHMR** (only if you select `prompthmr`) — `docker compose exec webui python /app/scripts/download_prompthmr.py`.
+5. **GPU health** — check the *GPU health* accordion on the control page (expect capability `8.0`, 64 GB per card).
 
 Then upload a video (≥121 frames, 1080p+, 9:16 ideal) on the control page, pick a **pose model**
 (`gvhmr` or `smplerx`), and run it in the viewer. By default each new upload deletes all previous
@@ -48,7 +49,7 @@ runs/uploads/cache/logs first (uncheck *Delete previous runs before starting*, o
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `MOTION_BACKEND` | `gvhmr` | default pose model for the control-page dropdown: `gvhmr` (stable depth/trajectory) or `smplerx` (sharper per-frame pose, jittery depth) |
+| `MOTION_BACKEND` | `gvhmr` | default pose model for the control-page dropdown: `gvhmr`, `prompthmr` (SOTA pose + stable world), or `smplerx` |
 | `CLEAR_ON_START` | `true` | delete previous runs/uploads/cache/logs before each new video (control-page checkbox overrides per run) |
 | `SMPLERX_BATCH` | `16` | frames per SMPLer-X batch (VRAM vs speed) |
 | `AUTO_DOWNLOAD_MODELS` | `false` | download models + SMPL-X + SMPLer-X at container start |
@@ -78,7 +79,14 @@ default):
 | Backend | Model | Tradeoff |
 | --- | --- | --- |
 | `gvhmr` (default) | **GVHMR** (upstream, video/temporal) | stable depth and global trajectory, no jitter; per-frame pose can be softer |
-| `smplerx` | **SMPLer-X-H32** (ViT-H, NeurIPS 2023, per-frame) | sharper per-frame pose; jitter and unstable depth because frames are regressed independently |
+| `prompthmr` | **PromptHMR-Vid** (CVPR 2025, video/temporal) | best pose accuracy + stable world trajectory; heavier motion stage |
+| `smplerx` | **SMPLer-X-H32** (ViT-H, NeurIPS 2023, per-frame) | sharper per-frame pose than GVHMR; jitter and unstable depth because frames are regressed independently |
+
+The PromptHMR backend vendors PromptHMR into `/opt/prompthmr` and uses only the
+single-person, static-camera path — none of its compiled world-video extras
+(detectron2 / SAM2 / DROID-SLAM / Metric3D / pytorch3d) are installed. Run
+`python /app/scripts/download_prompthmr.py` (or `AUTO_DOWNLOAD_MODELS=true`) to
+fetch its checkpoints.
 
 The SMPLer-X checkpoint (`smpler_x_h32_correct.pth.tar`, ~2.6 GB from Hugging
 Face `caizhongang/SMPLer-X`) is downloaded on first use or with
