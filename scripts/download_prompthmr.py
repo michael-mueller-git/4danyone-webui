@@ -21,10 +21,14 @@ directory:
     phmr_vid/prhmr_release_002.ckpt
     phmr_vid/prhmr_release_002.yaml
     vitpose-h-coco_25.pth
+    smplx2smpl_joints.npy
+    smplx2smpl.pkl
+    smpl/SMPL_NEUTRAL.pkl
     l14_fullcc2.5b.pt          # MetaCLIP ViT-L/14 backbone (PromptHMR ClipEncoder)
 
 The YOLO detector is reused from GVHMR's ``yolov8x.pt`` and SMPL-X from the
-4DAnyone model cache, so neither needs to be mirrored. Run manually or via
+4DAnyone model cache. SMPL (``smpl/SMPL_NEUTRAL.pkl``) is separately licensed;
+provide it via ``SMPL_SOURCE`` or the public mirror fallback. Run manually or via
 ``AUTO_DOWNLOAD_MODELS=true``:
 
     python /app/scripts/download_prompthmr.py
@@ -44,6 +48,11 @@ MODEL_DIR = Path(os.environ.get("MODEL_DIR", "/app/models"))
 GVHMR_ROOT = Path(os.environ.get("GVHMR_ROOT", "/app/third_party/GVHMR"))
 SOURCE = os.environ.get("PROMPTHMR_CHECKPOINTS_SOURCE")
 HF_REPO = os.environ.get("PROMPTHMR_HF_REPO")
+# SMPL is licensed separately (like SMPL-X). Provide a local pkl via SMPL_SOURCE
+# or fall back to a public mirror.
+SMPL_SOURCE = os.environ.get("SMPL_SOURCE")
+SMPL_MIRROR_REPO = os.environ.get("SMPL_MIRROR_REPO", "lithiumice/motion_imitation")
+SMPL_MIRROR_FILE = os.environ.get("SMPL_MIRROR_FILE", "smpl/SMPL_NEUTRAL.pkl")
 # The official weights are served through a TLS-inspecting proxy in some
 # clusters whose CA is not in the container trust store, so verification is
 # skipped by default for these public, read-only assets. Set
@@ -58,6 +67,8 @@ YOLO_FALLBACKS = (
 
 CACHE = MODEL_DIR / "prompthmr"
 PRETRAIN = CACHE / "pretrain"
+BODY_MODELS = CACHE / "body_models"
+SMPL_NEUTRAL = BODY_MODELS / "smpl" / "SMPL_NEUTRAL.pkl"
 # open_clip caches URL-downloaded backbones under ~/.cache/clip with no env hook,
 # so keep the master copy on the volume and symlink it into place at boot.
 CLIP_MASTER = CACHE / "clip" / "l14_fullcc2.5b.pt"
@@ -70,6 +81,9 @@ FILE_MAP = (
     ("phmr_vid/prhmr_release_002.ckpt", PRETRAIN / "phmr_vid" / "prhmr_release_002.ckpt"),
     ("phmr_vid/prhmr_release_002.yaml", PRETRAIN / "phmr_vid" / "prhmr_release_002.yaml"),
     ("vitpose-h-coco_25.pth", PRETRAIN / "vitpose-h-coco_25.pth"),
+    ("smplx2smpl_joints.npy", BODY_MODELS / "smplx2smpl_joints.npy"),
+    ("smplx2smpl.pkl", BODY_MODELS / "smplx2smpl.pkl"),
+    ("smpl/SMPL_NEUTRAL.pkl", SMPL_NEUTRAL),
     ("yolo11x.pt", CACHE / "yolo11x.pt"),
     ("l14_fullcc2.5b.pt", CLIP_MASTER),
 )
@@ -80,13 +94,20 @@ GDRIVE_FOLDERS = (
     "1EQ7arZz135T-WpxkS_K1R_hjZp3prh-y",  # phmr (image model + config)
     "18SywG7Fc_iTfVNaikjHAZmy-A9I85eKv",  # phmr_vid (video head)
     "1OKhTdL1QVFH3f4hbIEa7jLANx4azuPi1",  # sam2_ckpts (world-video extras)
-    "1JU7CuU2rKkwD7WWjvSZJKpQFFk_Z6NL7",  # supplementary (smplx2smpl etc.)
+)
+# Supplementary body models (Drive title "body_models"): upstream fetch_smplx.sh
+# downloads this into data/body_models/, so route it to BODY_MODELS (not PRETRAIN).
+BODY_MODELS_FOLDER = "1JU7CuU2rKkwD7WWjvSZJKpQFFk_Z6NL7"
+BODY_MODEL_FILES = (
+    BODY_MODELS / "smplx2smpl_joints.npy",
+    BODY_MODELS / "smplx2smpl.pkl",
 )
 
-# PromptHMR publishes ViTPose as a lone Google Drive file, not inside a folder,
-# so it must be fetched separately (see PromptHMR scripts/fetch_data.sh).
+# PromptHMR publishes these as lone Google Drive files, not inside a folder,
+# so they must be fetched separately (see PromptHMR scripts/fetch_data.sh).
 GDRIVE_FILES = {
     "1ZprPoNXe_f9a9flr0RhS3XCJBfqhFSeE": PRETRAIN / "vitpose-h-coco_25.pth",
+    "1v9Qy7ZXWcTM8_a9K2nSLyyVrJMFYcUOk": BODY_MODELS / "smplx" / "SMPLX_neutral_array_f32_slim.npz",
 }
 
 BEDLAM2_FILES = {
@@ -134,7 +155,7 @@ def _wire_checkout() -> None:
     data.mkdir(parents=True, exist_ok=True)
     for name, source in (
         ("pretrain", PRETRAIN),
-        ("body_models", CACHE / "body_models"),
+        ("body_models", BODY_MODELS),
     ):
         source.mkdir(parents=True, exist_ok=True)
         _link(source, data / name)
@@ -219,6 +240,18 @@ def _fetch_gdrive_files() -> None:
         _run(["gdown", "-O", str(target), *GDRIVE_TLS_FLAGS, url])
 
 
+def _fetch_gdrive_body_models() -> None:
+    if not shutil.which("gdown"):
+        print("[prompthmr] gdown not installed; skipping Google Drive downloads", flush=True)
+        return
+    CACHE.mkdir(parents=True, exist_ok=True)
+    url = f"https://drive.google.com/drive/folders/{BODY_MODELS_FOLDER}?usp=sharing"
+    print(f"[prompthmr] gdown folder {BODY_MODELS_FOLDER} -> body_models", flush=True)
+    # gdown names the destination after the Drive folder ("body_models"), so
+    # pointing at CACHE creates CACHE/body_models/{smplx2smpl*...}.
+    _run(["gdown", "-O", str(CACHE) + "/", *GDRIVE_TLS_FLAGS, url])
+
+
 def _fetch_bedlam2() -> None:
     for name, target in BEDLAM2_FILES.items():
         if target.is_file():
@@ -260,7 +293,7 @@ def _fetch_yolo() -> None:
 
 
 def _link_smplx() -> None:
-    target = CACHE / "body_models" / "smplx" / "SMPLX_NEUTRAL.npz"
+    target = BODY_MODELS / "smplx" / "SMPLX_NEUTRAL.npz"
     if target.is_file():
         return
     for source in (
@@ -273,6 +306,48 @@ def _link_smplx() -> None:
             print(f"[prompthmr] SMPL-X linked from {source}", flush=True)
             return
     print("[prompthmr] WARNING: SMPL-X neutral model not found in the model cache", flush=True)
+
+
+def _fetch_smpl() -> None:
+    """Provide ``smpl/SMPL_NEUTRAL.pkl`` (separately licensed)."""
+
+    if SMPL_NEUTRAL.is_file():
+        return
+    SMPL_NEUTRAL.parent.mkdir(parents=True, exist_ok=True)
+
+    if SMPL_SOURCE:
+        source = Path(SMPL_SOURCE).expanduser()
+        if source.is_file():
+            shutil.copy2(source, SMPL_NEUTRAL)
+            print(f"[prompthmr] SMPL copied from {source}", flush=True)
+            return
+        print(f"[prompthmr] SMPL_SOURCE is not a file: {source}", flush=True)
+
+    for source in (
+        MODEL_DIR / "body_models" / "smpl" / "SMPL_NEUTRAL.pkl",
+        GVHMR_ROOT / "inputs" / "checkpoints" / "body_models" / "smpl" / "SMPL_NEUTRAL.pkl",
+    ):
+        if source.is_file():
+            shutil.copy2(source, SMPL_NEUTRAL)
+            print(f"[prompthmr] SMPL linked from {source}", flush=True)
+            return
+
+    try:
+        from huggingface_hub import hf_hub_download
+
+        downloaded = hf_hub_download(repo_id=SMPL_MIRROR_REPO, filename=SMPL_MIRROR_FILE)
+        shutil.copy2(downloaded, SMPL_NEUTRAL)
+        print(f"[prompthmr] SMPL fetched from {SMPL_MIRROR_REPO}", flush=True)
+        return
+    except Exception as exc:  # noqa: BLE001 - fall back to a direct URL
+        print(f"[prompthmr] HF mirror fetch failed for SMPL ({exc}); trying direct URL", flush=True)
+
+    url = f"https://huggingface.co/{SMPL_MIRROR_REPO}/resolve/main/{SMPL_MIRROR_FILE}"
+    print(f"[prompthmr] downloading {url}", flush=True)
+    try:
+        _download_url(url, SMPL_NEUTRAL)
+    except Exception as exc:  # noqa: BLE001 - best effort
+        print(f"[prompthmr] SMPL download failed: {exc}", flush=True)
 
 
 def main() -> int:
@@ -296,8 +371,11 @@ def main() -> int:
     if any(not path.is_file() for path in folder_targets):
         _fetch_gdrive_folders()
         _fetch_bedlam2()
+    if any(not path.is_file() for path in BODY_MODEL_FILES):
+        _fetch_gdrive_body_models()
     if any(not path.is_file() for path in GDRIVE_FILES.values()):
         _fetch_gdrive_files()
+    _fetch_smpl()
     _fetch_yolo()
     _fetch_clip()
 

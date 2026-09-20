@@ -64,6 +64,9 @@ CLEAN_DIRS = (UPLOADS_DIR, OUTPUTS_DIR, CACHE_DIR, LOGS_DIR)
 MIN_FRAMES = 121
 READY_TIMEOUT = 240
 STOP_GRACE = 10
+# Port-open != UI-ready; the Rerun scene can fail to load if the browser is
+# redirected too early, so wait this long after readiness before redirecting.
+VIEWER_REDIRECT_DELAY = max(0.0, float(os.environ.get("VIEWER_REDIRECT_DELAY", "15")))
 
 
 def _now() -> str:
@@ -106,6 +109,17 @@ def _wait_ready(proc: subprocess.Popen, timeout: float) -> bool:
         except OSError:
             time.sleep(1.0)
     return False
+
+
+def _settle_viewer() -> None:
+    """Give the official Space's UI/assets time to finish booting.
+
+    The port opens before the Gradio frontend and Rerun scene are usable, so a
+    redirect sent immediately after readiness can fail to load until a reload.
+    """
+
+    if VIEWER_REDIRECT_DELAY > 0:
+        time.sleep(VIEWER_REDIRECT_DELAY)
 
 
 def _redirect_html(url: str) -> str:
@@ -281,6 +295,7 @@ def start_run(video_file, example, backend, clear_old):
             gr.update(visible=False),
         )
         return
+    _settle_viewer()
     yield (
         gr.update(value=f"Viewer ready: {PUBLIC_VIEWER_URL}"),
         gr.update(value=_redirect_html(PUBLIC_VIEWER_URL), visible=True),
@@ -300,6 +315,7 @@ def reopen_run(run_dir, backend):
             gr.update(visible=False),
         )
         return
+    _settle_viewer()
     yield (
         gr.update(value=f"Viewer ready: {PUBLIC_VIEWER_URL}"),
         gr.update(value=_redirect_html(PUBLIC_VIEWER_URL), visible=True),

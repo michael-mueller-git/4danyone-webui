@@ -56,10 +56,13 @@ runs/uploads/cache/logs first (uncheck *Delete previous runs before starting*, o
 | `DEFAULT_ATTENTION_BACKEND` | `auto` | `auto` / `sageattention` / `sdpa` |
 | `CONTROL_PORT` / `OFFICIAL_PORT` | `7860` / `7861` | ports of the two WebUIs |
 | `PUBLIC_VIEWER_URL` | `http://127.0.0.1:7861` | browser URL of the official Space; set to `http://<host>:7861` on a remote host |
+| `VIEWER_REDIRECT_DELAY` | `15` | seconds to wait after the viewer port opens before redirecting the browser (raise if the Rerun scene fails to load on first open) |
 | `VIDEO_PATH` / `OUTPUT_DIR` | (none) | pre-start the official Space for a video / saved run at boot (automation) |
 | `MODEL_DIR` / `DATA_DIR` | `/app/models` / `/app/data` | model cache / outputs (Docker volumes) |
 | `SMPLX_SOURCE` | (none) | path to `models_smplx_v1_1.zip` or `SMPLX_NEUTRAL.npz` |
 | `SMPLX_MIRROR_REPO` / `SMPLX_MIRROR_FILE` | `liujiting/models_smplx_v1_1` / `models_smplx_v1_1.zip` | public mirror fallback for SMPL-X |
+| `SMPL_SOURCE` | (none) | path to a licensed `SMPL_NEUTRAL.pkl` for the PromptHMR backend |
+| `SMPL_MIRROR_REPO` / `SMPL_MIRROR_FILE` | `lithiumice/motion_imitation` / `smpl/SMPL_NEUTRAL.pkl` | public mirror fallback for SMPL |
 
 Manual CLI (pre-seed the model volume during image build/CI):
 
@@ -96,8 +99,8 @@ TLS verification is skipped for these public, read-only downloads by default
 TLS-inspecting proxy work without mounting its CA.
 
 PromptHMR's weights are **not published on HuggingFace**, so internal-CA /
-air-gapped clusters that cannot reach those hosts must mirror these six files
-once (into their own HF repo or a PVC dir):
+air-gapped clusters that cannot reach those hosts must mirror these files once
+(into their own HF repo or a PVC dir):
 
 ```
 phmr/checkpoint.ckpt
@@ -105,6 +108,9 @@ phmr/config.yaml
 phmr_vid/prhmr_release_002.ckpt
 phmr_vid/prhmr_release_002.yaml
 vitpose-h-coco_25.pth
+smplx2smpl_joints.npy
+smplx2smpl.pkl
+smpl/SMPL_NEUTRAL.pkl      # separately licensed (see SMPL_SOURCE below)
 l14_fullcc2.5b.pt          # https://dl.fbaipublicfiles.com/MMPT/metaclip/l14_fullcc2.5b.pt
 ```
 
@@ -113,7 +119,9 @@ Then either:
 - `PROMPTHMR_HF_REPO=<your-org>/prompthmr-weights` (pulled via `HF_ENDPOINT`).
 
 The YOLO detector is reused from GVHMR's `yolov8x.pt` and SMPL-X from the model
-cache, so neither needs mirroring.
+cache, so neither needs mirroring. SMPL is licensed separately (like SMPL-X):
+provide `SMPL_SOURCE=/path/to/SMPL_NEUTRAL.pkl`, or let the script fall back to
+the public mirror (`SMPL_MIRROR_REPO` / `SMPL_MIRROR_FILE`).
 
 The SMPLer-X checkpoint (`smpler_x_h32_correct.pth.tar`, ~2.6 GB from Hugging
 Face `caizhongang/SMPLer-X`) is downloaded on first use or with

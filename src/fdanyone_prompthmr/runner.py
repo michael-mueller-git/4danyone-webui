@@ -35,6 +35,9 @@ _REQUIRED_CHECKPOINTS = (
     "data/pretrain/phmr_vid/prhmr_release_002.ckpt",
     "data/pretrain/phmr_vid/prhmr_release_002.yaml",
     "data/pretrain/vitpose-h-coco_25.pth",
+    "data/body_models/smplx2smpl_joints.npy",
+    "data/body_models/smplx2smpl.pkl",
+    "data/body_models/smpl/SMPL_NEUTRAL.pkl",
     "data/yolo11x.pt",
 )
 
