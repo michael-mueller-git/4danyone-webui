@@ -43,6 +43,31 @@ def _install_xformers_shim() -> bool:
     return True
 
 
+def _install_torch_load_compat() -> bool:
+    """Let unqualified ``torch.load`` calls read legacy checkpoints.
+
+    ``open_clip_torch==2.24.0`` (and the SMPLer-X loader) call
+    ``torch.load`` without ``weights_only``. torch>=2.6 then defaults it to
+    ``True`` and rejects the MetaCLIP checkpoint's ``numpy`` globals. Relax the
+    default only for callers that don't specify it; PromptHMR's own loads pass
+    ``weights_only=True`` explicitly and stay strict.
+    """
+
+    import torch
+
+    if getattr(torch.load, "_phmr_compat", False):
+        return False
+    original = torch.load
+
+    def load(*args, **kwargs):
+        kwargs.setdefault("weights_only", False)
+        return original(*args, **kwargs)
+
+    load._phmr_compat = True
+    torch.load = load
+    return True
+
+
 def configure() -> None:
     """Make ``import prompt_hmr`` / ``pipeline.*`` resolvable on this env."""
 
@@ -54,6 +79,7 @@ def configure() -> None:
         if text not in sys.path:
             sys.path.insert(0, text)
     _install_xformers_shim()
+    _install_torch_load_compat()
 
 
 @contextmanager
