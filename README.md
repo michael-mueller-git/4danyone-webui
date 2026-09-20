@@ -91,6 +91,9 @@ fetch its checkpoints into `models/prompthmr/`. With internet egress to
 script pulls the `phmr`/`phmr_vid` Google Drive folders, the standalone ViTPose
 checkpoint (published as a lone Drive file, *not* inside a folder), the BEDLAM2
 video head, the YOLO detector (reused from GVHMR) and the MetaCLIP backbone.
+TLS verification is skipped for these public, read-only downloads by default
+(set `PROMPTHMR_INSECURE_SSL=0` to enforce it), so clusters behind a
+TLS-inspecting proxy work without mounting its CA.
 
 PromptHMR's weights are **not published on HuggingFace**, so internal-CA /
 air-gapped clusters that cannot reach those hosts must mirror these six files

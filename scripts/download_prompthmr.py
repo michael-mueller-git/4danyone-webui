@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import ssl
 import subprocess
 import sys
 from pathlib import Path
@@ -43,6 +44,12 @@ MODEL_DIR = Path(os.environ.get("MODEL_DIR", "/app/models"))
 GVHMR_ROOT = Path(os.environ.get("GVHMR_ROOT", "/app/third_party/GVHMR"))
 SOURCE = os.environ.get("PROMPTHMR_CHECKPOINTS_SOURCE")
 HF_REPO = os.environ.get("PROMPTHMR_HF_REPO")
+# The official weights are served through a TLS-inspecting proxy in some
+# clusters whose CA is not in the container trust store, so verification is
+# skipped by default for these public, read-only assets. Set
+# PROMPTHMR_INSECURE_SSL=0 to enforce TLS verification.
+INSECURE_SSL = os.environ.get("PROMPTHMR_INSECURE_SSL", "1").lower() not in ("0", "false", "no")
+GDRIVE_TLS_FLAGS = ("--no-check-certificate",) if INSECURE_SSL else ()
 # PromptHMR's detector hard-codes data/yolo11x.pt, but any person detector works;
 # reuse GVHMR's already-downloaded YOLOv8x to avoid another external fetch.
 YOLO_FALLBACKS = (
@@ -94,6 +101,21 @@ def _run(command: list[str]) -> bool:
     except (OSError, subprocess.CalledProcessError) as exc:
         print(f"[prompthmr] command failed: {' '.join(command)} ({exc})", flush=True)
         return False
+
+
+def _download_url(url: str, target: Path) -> None:
+    """Download ``url`` to ``target``, honoring the INSECURE_SSL setting."""
+
+    import urllib.request
+
+    context = None
+    if INSECURE_SSL:
+        # Build the context directly so a broken SSL_CERT_FILE can't break us.
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+    with urllib.request.urlopen(url, context=context) as response, open(target, "wb") as output:
+        shutil.copyfileobj(response, output)
 
 
 def _link(source: Path, target: Path) -> None:
@@ -179,7 +201,8 @@ def _fetch_gdrive_folders() -> None:
     for folder in GDRIVE_FOLDERS:
         url = f"https://drive.google.com/drive/folders/{folder}?usp=sharing"
         print(f"[prompthmr] gdown folder {folder}", flush=True)
-        _run(["gdown", "--folder", "-O", str(PRETRAIN) + "/", url])
+        # Folder URLs are auto-detected (gdown dropped --folder for URLs).
+        _run(["gdown", "-O", str(PRETRAIN) + "/", *GDRIVE_TLS_FLAGS, url])
 
 
 def _fetch_gdrive_files() -> None:
@@ -192,12 +215,11 @@ def _fetch_gdrive_files() -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         url = f"https://drive.google.com/file/d/{file_id}/view"
         print(f"[prompthmr] gdown file {file_id} -> {target.name}", flush=True)
-        _run(["gdown", "--fuzzy", "-O", str(target), url])
+        # Recent gdown dropped --fuzzy; file URLs are auto-detected.
+        _run(["gdown", "-O", str(target), *GDRIVE_TLS_FLAGS, url])
 
 
 def _fetch_bedlam2() -> None:
-    import urllib.request
-
     for name, target in BEDLAM2_FILES.items():
         if target.is_file():
             continue
@@ -205,20 +227,18 @@ def _fetch_bedlam2() -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         print(f"[prompthmr] downloading {url}", flush=True)
         try:
-            urllib.request.urlretrieve(url, target)
+            _download_url(url, target)
         except Exception as exc:  # noqa: BLE001 - best effort
             print(f"[prompthmr] download failed for {name}: {exc}", flush=True)
 
 
 def _fetch_clip() -> None:
-    import urllib.request
-
     if CLIP_MASTER.is_file():
         return
     CLIP_MASTER.parent.mkdir(parents=True, exist_ok=True)
     print(f"[prompthmr] downloading {CLIP_URL}", flush=True)
     try:
-        urllib.request.urlretrieve(CLIP_URL, CLIP_MASTER)
+        _download_url(CLIP_URL, CLIP_MASTER)
     except Exception as exc:  # noqa: BLE001 - best effort
         print(f"[prompthmr] CLIP backbone download failed: {exc}", flush=True)
 
