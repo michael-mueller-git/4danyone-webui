@@ -70,11 +70,17 @@ FILE_MAP = (
 REQUIRED = tuple(destination for _, destination in FILE_MAP)
 
 GDRIVE_FOLDERS = (
-    "1EQ7arZz135T-WpxkS_K1R_hjZp3prh-y",  # image model + config
-    "18SywG7Fc_iTfVNaikjHAZmy-A9I85eKv",  # video head
-    "1OKhTdL1QVFH3f4hbIEa7jLANx4azuPi1",  # third-party (ViTPose/YOLO)
+    "1EQ7arZz135T-WpxkS_K1R_hjZp3prh-y",  # phmr (image model + config)
+    "18SywG7Fc_iTfVNaikjHAZmy-A9I85eKv",  # phmr_vid (video head)
+    "1OKhTdL1QVFH3f4hbIEa7jLANx4azuPi1",  # sam2_ckpts (world-video extras)
     "1JU7CuU2rKkwD7WWjvSZJKpQFFk_Z6NL7",  # supplementary (smplx2smpl etc.)
 )
+
+# PromptHMR publishes ViTPose as a lone Google Drive file, not inside a folder,
+# so it must be fetched separately (see PromptHMR scripts/fetch_data.sh).
+GDRIVE_FILES = {
+    "1ZprPoNXe_f9a9flr0RhS3XCJBfqhFSeE": PRETRAIN / "vitpose-h-coco_25.pth",
+}
 
 BEDLAM2_FILES = {
     "phmr_b1b2.ckpt": PRETRAIN / "phmr_vid" / "prhmr_release_002.ckpt",
@@ -176,6 +182,19 @@ def _fetch_gdrive_folders() -> None:
         _run(["gdown", "--folder", "-O", str(PRETRAIN) + "/", url])
 
 
+def _fetch_gdrive_files() -> None:
+    if not shutil.which("gdown"):
+        print("[prompthmr] gdown not installed; skipping Google Drive file downloads", flush=True)
+        return
+    for file_id, target in GDRIVE_FILES.items():
+        if target.is_file():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        url = f"https://drive.google.com/file/d/{file_id}/view"
+        print(f"[prompthmr] gdown file {file_id} -> {target.name}", flush=True)
+        _run(["gdown", "--fuzzy", "-O", str(target), url])
+
+
 def _fetch_bedlam2() -> None:
     import urllib.request
 
@@ -248,11 +267,19 @@ def main() -> int:
         print(f"[prompthmr] copying checkpoints from {SOURCE}", flush=True)
         _copy_from_source()
     _fetch_from_hf()
-    if any(not path.is_file() for path in REQUIRED):
+    folder_targets = (
+        PRETRAIN / "phmr" / "checkpoint.ckpt",
+        PRETRAIN / "phmr" / "config.yaml",
+        PRETRAIN / "phmr_vid" / "prhmr_release_002.ckpt",
+        PRETRAIN / "phmr_vid" / "prhmr_release_002.yaml",
+    )
+    if any(not path.is_file() for path in folder_targets):
         _fetch_gdrive_folders()
         _fetch_bedlam2()
-        _fetch_yolo()
-        _fetch_clip()
+    if any(not path.is_file() for path in GDRIVE_FILES.values()):
+        _fetch_gdrive_files()
+    _fetch_yolo()
+    _fetch_clip()
 
     missing = [path for path in REQUIRED if not path.is_file()]
     if missing:

@@ -86,11 +86,15 @@ The PromptHMR backend vendors PromptHMR into `/opt/prompthmr` and uses only the
 single-person, static-camera path — none of its compiled world-video extras
 (detectron2 / SAM2 / DROID-SLAM / Metric3D / pytorch3d) are installed. Run
 `python /app/scripts/download_prompthmr.py` (or `AUTO_DOWNLOAD_MODELS=true`) to
-fetch its checkpoints into `models/prompthmr/`.
+fetch its checkpoints into `models/prompthmr/`. With internet egress to
+`drive.google.com` and `dl.fbaipublicfiles.com` this is fully automatic: the
+script pulls the `phmr`/`phmr_vid` Google Drive folders, the standalone ViTPose
+checkpoint (published as a lone Drive file, *not* inside a folder), the BEDLAM2
+video head, the YOLO detector (reused from GVHMR) and the MetaCLIP backbone.
 
-PromptHMR's weights are **not published on HuggingFace** — they only exist on
-Google Drive / BEDLAM2 / `fbaipublicfiles.com`, which internal-CA clusters usually
-can't reach. Mirror these six files once (into your own HF repo or a PVC dir):
+PromptHMR's weights are **not published on HuggingFace**, so internal-CA /
+air-gapped clusters that cannot reach those hosts must mirror these six files
+once (into their own HF repo or a PVC dir):
 
 ```
 phmr/checkpoint.ckpt

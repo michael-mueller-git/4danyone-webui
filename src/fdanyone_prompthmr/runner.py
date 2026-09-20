@@ -27,6 +27,28 @@ LOGGER = logging.getLogger("fdanyone")
 # SMPL-X body layout produced by PromptHMR_Video.run: [global_orient(3), body_pose(63), zeros(9)]
 _BODY_POSE_SLICE = slice(3, 66)
 
+# PromptHMR hard-codes these paths relative to PROMPTHMR_ROOT; fail with an
+# actionable message instead of a bare assertion deep inside the pipeline.
+_REQUIRED_CHECKPOINTS = (
+    "data/pretrain/phmr/checkpoint.ckpt",
+    "data/pretrain/phmr/config.yaml",
+    "data/pretrain/phmr_vid/prhmr_release_002.ckpt",
+    "data/pretrain/phmr_vid/prhmr_release_002.yaml",
+    "data/pretrain/vitpose-h-coco_25.pth",
+    "data/yolo11x.pt",
+)
+
+
+def _preflight() -> None:
+    missing = [rel for rel in _REQUIRED_CHECKPOINTS if not (PROMPTHMR_ROOT / rel).is_file()]
+    if missing:
+        raise FileNotFoundError(
+            f"PromptHMR checkpoints missing under {PROMPTHMR_ROOT}: {', '.join(missing)}. "
+            "Run `python /app/scripts/download_prompthmr.py`, or set "
+            "PROMPTHMR_CHECKPOINTS_SOURCE / PROMPTHMR_HF_REPO and restart with "
+            "AUTO_DOWNLOAD_MODELS=true."
+        )
+
 
 def _primary_track(tracks: dict, num_frames: int, height: int, width: int) -> dict:
     """Reduce the longest detected track to a full-length, single-person track.
@@ -72,6 +94,7 @@ def run_prompthmr(
 ) -> MotionResult:
     """Recover static-camera human motion with PromptHMR-Vid."""
     started = time.monotonic()
+    _preflight()
     configure()
     install_pytorch3d_compat()
     _install_optional_import_stubs()
