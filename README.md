@@ -86,7 +86,27 @@ The PromptHMR backend vendors PromptHMR into `/opt/prompthmr` and uses only the
 single-person, static-camera path — none of its compiled world-video extras
 (detectron2 / SAM2 / DROID-SLAM / Metric3D / pytorch3d) are installed. Run
 `python /app/scripts/download_prompthmr.py` (or `AUTO_DOWNLOAD_MODELS=true`) to
-fetch its checkpoints.
+fetch its checkpoints into `models/prompthmr/`.
+
+PromptHMR's weights are **not published on HuggingFace** — they only exist on
+Google Drive / BEDLAM2 / `fbaipublicfiles.com`, which internal-CA clusters usually
+can't reach. Mirror these six files once (into your own HF repo or a PVC dir):
+
+```
+phmr/checkpoint.ckpt
+phmr/config.yaml
+phmr_vid/prhmr_release_002.ckpt
+phmr_vid/prhmr_release_002.yaml
+vitpose-h-coco_25.pth
+l14_fullcc2.5b.pt          # https://dl.fbaipublicfiles.com/MMPT/metaclip/l14_fullcc2.5b.pt
+```
+
+Then either:
+- `PROMPTHMR_CHECKPOINTS_SOURCE=/app/models/prompthmr-src` (PVC dir), or
+- `PROMPTHMR_HF_REPO=<your-org>/prompthmr-weights` (pulled via `HF_ENDPOINT`).
+
+The YOLO detector is reused from GVHMR's `yolov8x.pt` and SMPL-X from the model
+cache, so neither needs mirroring.
 
 The SMPLer-X checkpoint (`smpler_x_h32_correct.pth.tar`, ~2.6 GB from Hugging
 Face `caizhongang/SMPLer-X`) is downloaded on first use or with

@@ -18,8 +18,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libx264-dev \
         git \
         curl \
+        ca-certificates \
         libgl1 \
         libglib2.0-0 \
+    && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -86,6 +88,12 @@ ENV PYTHONPATH=/app \
     GVHMR_ROOT=/app/third_party/GVHMR \
     PROMPTHMR_ROOT=/opt/prompthmr \
     GRADIO_TEMP_DIR=/app/data/.gradio-tmp \
+    HF_HOME=/app/models/huggingface \
+    TORCH_HOME=/app/models/torch \
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    GIT_SSL_CAINFO=/etc/ssl/certs/ca-certificates.crt \
     MOTION_BACKEND=gvhmr
 
 EXPOSE 7860 7861
