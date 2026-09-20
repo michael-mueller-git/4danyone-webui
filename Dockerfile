@@ -51,7 +51,15 @@ RUN pip install --no-cache-dir sageattention==1.0.6 \
     && python -c "import sageattention; print('sageattention OK')"
 
 # Best-effort extras for the GVHMR submodule runtime imports.
-RUN pip install --no-cache-dir rich matplotlib scikit-image joblib trimesh chumpy hydra_colorlog || true
+#
+# chumpy 0.70 is broken on this Python 3.11 / NumPy 2.x base, and smplx imports
+# it lazily when unpickling SMPL_NEUTRAL.pkl:
+#   * it calls inspect.getargspec (removed in Python 3.11); chumpy only reads
+#     `.args` / index 0, so getfullargspec is a drop-in replacement.
+#   * its __init__ imports NumPy scalar aliases (np.int, np.bool, ...) that
+#     NumPy 2 removed; the import is unused, so drop the line.
+RUN pip install --no-cache-dir rich matplotlib scikit-image joblib trimesh chumpy hydra_colorlog || true \
+    && python -c "import pathlib,sysconfig; s=pathlib.Path(sysconfig.get_paths()['purelib']); c=s/'chumpy'/'ch.py'; c.is_file() and c.write_text(c.read_text().replace('inspect.getargspec','inspect.getfullargspec')); i=s/'chumpy'/'__init__.py'; i.is_file() and i.write_text(''.join(l for l in i.read_text().splitlines(keepends=True) if not l.startswith('from numpy import')))"
 
 # WebUI launcher + headless SMPL-X provisioning.
 COPY entrypoint.sh /app/entrypoint.sh
