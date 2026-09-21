@@ -66,7 +66,7 @@ READY_TIMEOUT = 240
 STOP_GRACE = 10
 # Port-open != UI-ready; the Rerun scene can fail to load if the browser is
 # redirected too early, so wait this long after readiness before redirecting.
-VIEWER_REDIRECT_DELAY = max(0.0, float(os.environ.get("VIEWER_REDIRECT_DELAY", "15")))
+VIEWER_REDIRECT_DELAY = max(0.0, float(os.environ.get("VIEWER_REDIRECT_DELAY", "1")))
 
 
 def _now() -> str:

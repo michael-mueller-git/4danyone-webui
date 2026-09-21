@@ -56,7 +56,7 @@ runs/uploads/cache/logs first (uncheck *Delete previous runs before starting*, o
 | `DEFAULT_ATTENTION_BACKEND` | `auto` | `auto` / `sageattention` / `sdpa` |
 | `CONTROL_PORT` / `OFFICIAL_PORT` | `7860` / `7861` | ports of the two WebUIs |
 | `PUBLIC_VIEWER_URL` | `http://127.0.0.1:7861` | browser URL of the official Space; set to `http://<host>:7861` on a remote host |
-| `VIEWER_REDIRECT_DELAY` | `15` | seconds to wait after the viewer port opens before redirecting the browser (raise if the Rerun scene fails to load on first open) |
+| `VIEWER_REDIRECT_DELAY` | `1` | seconds to wait after the viewer port opens before redirecting the browser (raise if the Rerun scene fails to load on first open) |
 | `VIDEO_PATH` / `OUTPUT_DIR` | (none) | pre-start the official Space for a video / saved run at boot (automation) |
 | `MODEL_DIR` / `DATA_DIR` | `/app/models` / `/app/data` | model cache / outputs (Docker volumes) |
 | `SMPLX_SOURCE` | (none) | path to `models_smplx_v1_1.zip` or `SMPLX_NEUTRAL.npz` |
