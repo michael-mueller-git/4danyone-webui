@@ -144,7 +144,7 @@ def run_prompthmr(
 
         calib = est_calib(frames)
         camera = {
-            "img_focal": float(calib[0]),
+            "img_focal": torch.tensor(float(calib[0])),
             "img_center": np.array([calib[2], calib[3]], dtype=np.float32),
             "pred_cam_R": np.eye(3, dtype=np.float32)[None].repeat(num_frames, 0),
             "pred_cam_T": np.zeros((num_frames, 3), dtype=np.float32),
